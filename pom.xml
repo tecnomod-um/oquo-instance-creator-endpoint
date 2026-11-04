@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>es.um.dis.tecnomod</groupId>
 	<artifactId>oquo-instance-creator-endpoint</artifactId>
-	<version>0.0.1</version>
+	<version>0.0.2</version>
 
 	<parent>
 		<groupId>org.springframework.boot</groupId>
@@ -13,7 +13,7 @@
 	</parent>
 
 	<properties>
-		<oquo-instance-creator.version>0.0.5</oquo-instance-creator.version>
+		<oquo-instance-creator.version>0.0.6</oquo-instance-creator.version>
 		<maven.compiler.release>17</maven.compiler.release>
 		<spring.version>7.0.3</spring.version>
 		<start-class>es.um.dis.tecnomod.oquo.endpoint.Main</start-class>
