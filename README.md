@@ -56,14 +56,19 @@ directly.
 
 For every observation in the request, the service creates:
 
-| Resource created            | OQUO / reused class                          | What it represents                                   |
-|-----------------------------|----------------------------------------------|------------------------------------------------------|
-| `oquo:observation-<uuid>`   | `oboe:Observation`, `ipo:Symptom`            | The act of observing one entity                      |
-| `oquo:metric-<uuid>`        | `oboe:Measurement` + your metric class       | The measurement taken with that metric               |
-| `oquo:qualityValue-<uuid>`  | `eval:QualityValue`, `oboe:MeasuredValue`    | The value obtained, on the given scale               |
-| `oquo:evaluation-<uuid>`    | `eval:Evaluation`                            | The evaluation that produced the value               |
-| `oquo:instant-<uuid>`       | `time:Instant`                               | When the evaluation happened                         |
-| `oquo:issue-<uuid>`         | your issue class                             | (Optional) problems detected by the observation      |
+| Resource created              | OQUO / reused class                          | What it represents                                   |
+|-------------------------------|----------------------------------------------|------------------------------------------------------|
+| `<ns>observation-<uuid>`      | `oboe:Observation`, `ipo:Symptom`            | The act of observing one entity                      |
+| `<ns>metric-<uuid>`           | `oboe:Measurement` + your metric class       | The measurement taken with that metric               |
+| `<ns>qualityValue-<uuid>`     | `eval:QualityValue`, `oboe:MeasuredValue`    | The value obtained, on the given scale               |
+| `<ns>evaluation-<uuid>`       | `eval:Evaluation`                            | The evaluation that produced the value               |
+| `<ns>instant-<uuid>`          | `time:Instant`                               | When the evaluation happened                         |
+| `<ns>issue-<uuid>`            | your issue class                             | (Optional) problems detected by the observation      |
+
+`<ns>` is the **data namespace**: by default `https://purl.org/oquo-data/`, or the one you
+pass in the [`dataNamespace`](#query-parameters) parameter. The generated instances are data,
+so they are kept apart from the namespaces of the OQUO vocabulary (`https://purl.org/oquo#`
+for the core, and one namespace per module, such as `https://purl.org/oquo-huron#`).
 
 IRIs are generated with random UUIDs, so **every call produces new resources**, even for the
 same input.
@@ -89,6 +94,16 @@ curl -X POST https://semantics.inf.um.es/oquo-instance-creator/toOquoObservation
 
 You will get back Turtle like the [example response](#example-response).
 
+To generate the instances in your own namespace instead of the default one, add the
+`dataNamespace` parameter (see [Query parameters](#query-parameters)):
+
+```bash
+curl -X POST https://semantics.inf.um.es/oquo-instance-creator/toOquoObservation \
+     --url-query "dataNamespace=https://example.org/my-evaluations/" \
+     -H "Content-Type: application/json" \
+     -d @observation.json
+```
+
 If you prefer to run the service on your own machine (for example, to process large
 volumes of data or to work offline), follow the steps below.
 
@@ -109,7 +124,7 @@ and skip straight to [Run](#run).
 
 The endpoint depends on the
 [oquo-instance-creator](https://github.com/tecnomod-um/oquo-instance-creator) library
-(version `0.0.5`), which is not published in Maven Central. Install it in your local Maven
+(version `0.0.6`), which is not published in Maven Central. Install it in your local Maven
 repository first:
 
 ```bash
@@ -127,15 +142,15 @@ cd oquo-instance-creator-endpoint
 mvn package
 ```
 
-This produces `target/oquo-instance-creator-endpoint-0.0.1.jar`.
+This produces `target/oquo-instance-creator-endpoint-0.0.2.jar`.
 
 #### Run
 
 ```bash
-java -jar oquo-instance-creator-endpoint-0.0.1.jar --server.port=9000
+java -jar oquo-instance-creator-endpoint-0.0.2.jar --server.port=9000
 ```
 
-Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.1.jar`
+Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.2.jar`
 if you built it yourself.
 
 The service is now listening on `http://localhost:9000`. Change `--server.port` to use a
@@ -148,8 +163,26 @@ with `http://localhost:9000/toOquoObservation`.
 
 ### `POST /toOquoObservation`
 
+- **Query parameters:** optional `dataNamespace` (see below).
 - **Request body:** `application/json`, a list of observations (see below).
 - **Response:** `text/turtle`, the OQUO-compliant RDF for all the observations in the request.
+  If `dataNamespace` is not valid, the service returns `400 Bad Request`.
+
+#### Query parameters
+
+| Parameter       | Required | Description |
+|-----------------|:--------:|-------------|
+| `dataNamespace` | no  | Namespace in which the instances (observations, measurements, quality values, evaluations, instants and issues) are created. It must be an absolute `http` or `https` IRI ending in `/` or `#`, e.g. `https://example.org/my-evaluations/`. Defaults to `https://purl.org/oquo-data/`. |
+
+The value must be URL-encoded (e.g. `https%3A%2F%2Fexample.org%2Fmy-evaluations%2F`). This is
+especially important if the namespace ends in `#`, which must be sent as `%23`: otherwise it
+is interpreted as a URL fragment and never reaches the server. `curl --url-query` (curl 7.87
+or later), Python `requests` (`params=`) and Postman (*Params* tab) encode it for you.
+
+Use the default namespace for testing. To publish your evaluation results, use a namespace
+of your own.
+
+#### Request body
 
 The body is an object with a single field, `observationsInfoDTO`, holding an array of
 observations. You can send one observation or many in the same request.
@@ -160,7 +193,7 @@ observations. You can send one observation or many in the same request.
 |----------------------------|:--------:|-------------|
 | `featureOfInterestIRI`     | yes | IRI of the entity that was evaluated (e.g. a class of an ontology). |
 | `featureOfInterestTypeIRI` | yes | IRI of the type of that entity (e.g. `http://www.w3.org/2002/07/owl#Class`). |
-| `metricUsedIRI`            | yes | IRI of the metric, as defined in OQUO or in an OQUO-based module (e.g. `https://purl.org/oquo#NamesPerClassMetric`). |
+| `metricUsedIRI`            | yes | IRI of the metric, as defined in an OQUO-based module (e.g. `https://purl.org/oquo-huron#NamesPerClassMetric`). |
 | `scaleIRI`                 | yes | IRI of the scale the value is measured on. |
 | `scaleTypeIRI`             | yes | IRI of the type of scale, e.g. `https://purl.org/oquo#RawScale`. |
 | `rankingFunctionIRI`       | yes | Whether higher or lower values are better: `http://purl.org/net/QualityModel#HigherBest` or `http://purl.org/net/QualityModel#LowerBest`. |
@@ -175,7 +208,7 @@ observations. You can send one observation or many in the same request.
 
 | Field            | Required | Description |
 |------------------|:--------:|-------------|
-| `issueType`      | yes | IRI of the issue class (e.g. `https://purl.org/oquo#ClassWithNoNameIssue`). Generic severities are also available: `oquo:CriticalIssue`, `oquo:MajorIssue`, `oquo:MinorIssue`, `oquo:TrivialIssue`. |
+| `issueType`      | yes | IRI of the issue class, as defined in an OQUO-based module (e.g. `https://purl.org/oquo-huron#ClassWithNoNameIssue`). Generic severities defined in the OQUO core are also available: `oquo:CriticalIssue`, `oquo:MajorIssue`, `oquo:MinorIssue` and `oquo:InfoIssue`. |
 | `message`        | no  | Human-readable description, stored as `rdfs:comment`. |
 | `hostAsset`      | no  | IRI of the entity where the issue is located. |
 | `causativeAsset` | no  | IRI of the entity that causes the issue, if different from the host. |
@@ -200,8 +233,8 @@ name, and records which properties were considered names.
       "sourceDocumentIRI": "http://purl.obolibrary.org/obo/go.owl",
       "featureOfInterestIRI": "http://purl.obolibrary.org/obo/GO_0044208",
       "featureOfInterestTypeIRI": "http://www.w3.org/2002/07/owl#Class",
-      "metricUsedIRI": "https://purl.org/oquo#NamesPerClassMetric",
-      "scaleIRI": "https://purl.org/oquo#NamesPerClassMetricScale",
+      "metricUsedIRI": "https://purl.org/oquo-huron#NamesPerClassMetric",
+      "scaleIRI": "https://purl.org/oquo-huron#NamesPerClassMetricScale",
       "scaleTypeIRI": "https://purl.org/oquo#RawScale",
       "rankingFunctionIRI": "http://purl.org/net/QualityModel#HigherBest",
       "value": 0,
@@ -209,14 +242,14 @@ name, and records which properties were considered names.
       "details": ["Detail 1, Detail 2"],
       "issues": [
         {
-          "issueType": "https://purl.org/oquo#ClassWithNoNameIssue",
+          "issueType": "https://purl.org/oquo-huron#ClassWithNoNameIssue",
           "message": "The class does not have any name",
           "hostAsset": "http://purl.obolibrary.org/obo/GO_0044208"
         }
       ],
       "configurationDataList": [
         {
-          "configurationIRI": "https://purl.org/oquo#namesPerClassMetricConfiguration",
+          "configurationIRI": "https://purl.org/oquo-data/namesPerClassMetricConfiguration",
           "serializedConfiguration": "names = rdfs:label, foaf:name"
         }
       ]
@@ -231,88 +264,89 @@ name, and records which properties were considered names.
 <summary>Show the full Turtle output</summary>
 
 ```turtle
-<https://purl.org/oquo#observation-3946ded7-d25d-45f5-802e-e33ec57c175c>
-        a       <http://purl.org/ipo/core#Symptom> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Observation> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasMeasurement>
-                <https://purl.org/oquo#metric-0cf60840-f12c-4c99-87f7-8645848b336f> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#ofEntity>
-                <http://purl.obolibrary.org/obo/GO_0044208> ;
-        <http://purl.org/ipo/core#indicates>
-                <https://purl.org/oquo#issue-17e48be3-b188-4a59-a823-636aec80e1cb> ;
-        <http://www.w3.org/2006/time#hasTime>
-                <https://purl.org/oquo#instant-3acd25f8-d0e0-42ac-8404-660f91dba0f9> .
-
-<https://purl.org/oquo#qualityValue-e4e2572a-5f1c-40b7-acd2-e6c686c6b3a0>
+<https://purl.org/oquo-data/qualityValue-d07535b6-64a9-4394-8be2-112a1cd344c3>
         a       <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#MeasuredValue> , <http://purl.org/net/EvaluationResult#QualityValue> ;
         <http://www.w3.org/2000/01/rdf-schema#comment>
                 "Detail 1, Detail 2" ;
         <http://purl.org/net/EvaluationResult#forMeasure>
-                <https://purl.org/oquo#metric-0cf60840-f12c-4c99-87f7-8645848b336f> ;
+                <https://purl.org/oquo-data/metric-2a37d659-28fc-4193-9642-dc6bd92d660b> ;
         <http://purl.org/net/EvaluationResult#hasLiteralValue>
                 "0"^^<http://www.w3.org/2001/XMLSchema#int> ;
         <http://purl.org/net/EvaluationResult#isMeasuredOnScale>
-                <https://purl.org/oquo#NamesPerClassMetricScale> ;
+                <https://purl.org/oquo-huron#NamesPerClassMetricScale> ;
         <http://purl.org/net/EvaluationResult#obtainedFrom>
-                <https://purl.org/oquo#evaluation-ba2a64aa-8aed-4d3c-b9f9-af87d4e3d8b2> .
+                <https://purl.org/oquo-data/evaluation-7558a284-6cf1-4ac2-b838-28d886bc8a25> .
 
 <http://purl.org/net/QualityModel#HigherBest>
         a       <http://purl.org/net/QualityModel#RankingFunction> .
 
-<https://purl.org/oquo#namesPerClassMetricConfiguration>
-        a       <https://purl.org/oquo#EvaluationConfigurationData> , <http://purl.org/net/EvaluationResult#EvaluationData> ;
-        <https://www.omg.org/spec/Commons/TextDatatype/hasTextValue>
-                "names = rdfs:label, foaf:name" .
+<https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469>
+        a       <http://purl.org/ipo/core#Symptom> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Observation> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasMeasurement>
+                <https://purl.org/oquo-data/metric-2a37d659-28fc-4193-9642-dc6bd92d660b> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#ofEntity>
+                <http://purl.obolibrary.org/obo/GO_0044208> ;
+        <http://purl.org/ipo/core#indicates>
+                <https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33> ;
+        <http://www.w3.org/2006/time#hasTime>
+                <https://purl.org/oquo-data/instant-45299b22-78a9-4d9a-bce8-171dfe9df5b4> .
 
-<http://purl.obolibrary.org/obo/GO_0044208>
-        a       <http://purl.org/ipo/core#Asset> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Entity> , <http://www.w3.org/2002/07/owl#Class> , <http://purl.org/net/EvaluationResult#EvaluationSubject> ;
-        <http://purl.org/ipo/core#hostAssetOf>
-                <https://purl.org/oquo#issue-17e48be3-b188-4a59-a823-636aec80e1cb> .
+<https://purl.org/oquo-data/metric-2a37d659-28fc-4193-9642-dc6bd92d660b>
+        a       <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Measurement> , <https://purl.org/oquo-huron#NamesPerClassMetric> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasValue>
+                <https://purl.org/oquo-data/qualityValue-d07535b6-64a9-4394-8be2-112a1cd344c3> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#measurementFor>
+                <https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469> ;
+        <http://purl.org/net/QualityModel#hasScale>
+                <https://purl.org/oquo-huron#NamesPerClassMetricScale> .
 
-<https://purl.org/oquo#evaluation-ba2a64aa-8aed-4d3c-b9f9-af87d4e3d8b2>
+<https://purl.org/oquo-data/evaluation-7558a284-6cf1-4ac2-b838-28d886bc8a25>
         a       <http://purl.org/net/EvaluationResult#Evaluation> ;
         <http://purl.org/net/EvaluationResult#evaluatedSubject>
                 <http://purl.obolibrary.org/obo/GO_0044208> ;
         <http://purl.org/net/EvaluationResult#inputData>
-                <https://purl.org/oquo#namesPerClassMetricConfiguration> , <http://purl.obolibrary.org/obo/go.owl> ;
+                <https://purl.org/oquo-data/namesPerClassMetricConfiguration> , <http://purl.obolibrary.org/obo/go.owl> ;
         <http://purl.org/net/EvaluationResult#producedQualityValue>
-                <https://purl.org/oquo#qualityValue-e4e2572a-5f1c-40b7-acd2-e6c686c6b3a0> ;
+                <https://purl.org/oquo-data/qualityValue-d07535b6-64a9-4394-8be2-112a1cd344c3> ;
         <http://www.w3.org/2006/time#hasTime>
-                <https://purl.org/oquo#instant-3acd25f8-d0e0-42ac-8404-660f91dba0f9> ;
+                <https://purl.org/oquo-data/instant-45299b22-78a9-4d9a-bce8-171dfe9df5b4> ;
         <https://purl.org/oquo#hasDetectedIssue>
-                <https://purl.org/oquo#issue-17e48be3-b188-4a59-a823-636aec80e1cb> ;
+                <https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33> ;
         <https://purl.org/oquo#hasObservation>
-                <https://purl.org/oquo#observation-3946ded7-d25d-45f5-802e-e33ec57c175c> .
+                <https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469> .
 
-<https://purl.org/oquo#issue-17e48be3-b188-4a59-a823-636aec80e1cb>
-        a       <https://purl.org/oquo#ClassWithNoNameIssue> ;
+<http://purl.obolibrary.org/obo/GO_0044208>
+        a       <http://purl.org/ipo/core#Asset> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Entity> , <http://www.w3.org/2002/07/owl#Class> , <http://purl.org/net/EvaluationResult#EvaluationSubject> ;
+        <http://purl.org/ipo/core#hostAssetOf>
+                <https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33> .
+
+<https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33>
+        a       <https://purl.org/oquo-huron#ClassWithNoNameIssue> ;
         <http://www.w3.org/2000/01/rdf-schema#comment>
                 "The class does not have any name" ;
         <http://purl.org/ipo/core#hasHostAsset>
                 <http://purl.obolibrary.org/obo/GO_0044208> ;
         <http://purl.org/ipo/core#indicatedBy>
-                <https://purl.org/oquo#observation-3946ded7-d25d-45f5-802e-e33ec57c175c> .
+                <https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469> .
 
-<https://purl.org/oquo#NamesPerClassMetricScale>
-        a       <https://purl.org/oquo#RawScale> ;
-        <http://purl.org/net/QualityModel#hasRankigFunction>
-                <http://purl.org/net/QualityModel#HigherBest> .
-
-<https://purl.org/oquo#metric-0cf60840-f12c-4c99-87f7-8645848b336f>
-        a       <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Measurement> , <https://purl.org/oquo#NamesPerClassMetric> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasValue>
-                <https://purl.org/oquo#qualityValue-e4e2572a-5f1c-40b7-acd2-e6c686c6b3a0> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#measurementFor>
-                <https://purl.org/oquo#observation-3946ded7-d25d-45f5-802e-e33ec57c175c> ;
-        <http://purl.org/net/QualityModel#hasScale>
-                <https://purl.org/oquo#NamesPerClassMetricScale> .
-
-<https://purl.org/oquo#instant-3acd25f8-d0e0-42ac-8404-660f91dba0f9>
+<https://purl.org/oquo-data/instant-45299b22-78a9-4d9a-bce8-171dfe9df5b4>
         a       <http://www.w3.org/2006/time#Instant> ;
         <http://www.w3.org/2006/time#inXSDDateTime>
                 "2023-03-18T12:47:17Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
 
+<https://purl.org/oquo-data/namesPerClassMetricConfiguration>
+        a       <https://purl.org/oquo#EvaluationConfigurationData> , <http://purl.org/net/EvaluationResult#EvaluationData> ;
+        <https://www.omg.org/spec/Commons/TextDatatype/hasTextValue>
+                "names = rdfs:label, foaf:name" .
+
+<https://purl.org/oquo-huron#NamesPerClassMetricScale>
+        a       <https://purl.org/oquo#RawScale> ;
+        <http://purl.org/net/QualityModel#hasRankigFunction>
+                <http://purl.org/net/QualityModel#HigherBest> .
+
 <http://purl.obolibrary.org/obo/go.owl>
         a       <https://purl.org/oquo#EvaluationInputData> , <http://purl.org/net/EvaluationResult#EvaluationData> , <http://www.w3.org/2002/07/owl#Ontology> .
+
 ```
 
 </details>
@@ -329,8 +363,8 @@ import requests
 observation = {
     "featureOfInterestIRI": "http://purl.obolibrary.org/obo/GO_0044208",
     "featureOfInterestTypeIRI": "http://www.w3.org/2002/07/owl#Class",
-    "metricUsedIRI": "https://purl.org/oquo#NamesPerClassMetric",
-    "scaleIRI": "https://purl.org/oquo#NamesPerClassMetricScale",
+    "metricUsedIRI": "https://purl.org/oquo-huron#NamesPerClassMetric",
+    "scaleIRI": "https://purl.org/oquo-huron#NamesPerClassMetricScale",
     "scaleTypeIRI": "https://purl.org/oquo#RawScale",
     "rankingFunctionIRI": "http://purl.org/net/QualityModel#HigherBest",
     "value": 0,
@@ -339,6 +373,7 @@ observation = {
 
 response = requests.post(
     "https://semantics.inf.um.es/oquo-instance-creator/toOquoObservation",
+    params={"dataNamespace": "https://example.org/my-evaluations/"},  # optional
     json={"observationsInfoDTO": [observation]},
 )
 response.raise_for_status()
@@ -354,9 +389,18 @@ GraphDB, Virtuoso...) together with the OQUO ontology.
 
 ## Where do the metric and scale IRIs come from?
 
-The IRIs for metrics, scales and issue types are defined in OQUO and its modules. Browse the
-[OQUO repository](https://github.com/tecnomod-um/oquo) to find the ones you need, or define
-your own in an OQUO-based module. The
+The IRIs for metrics, scales and issue types are defined in the OQUO modules that integrate
+each evaluation framework, and each module uses its own namespace:
+
+| Module | Namespace | Repository |
+|---|---|---|
+| OQUO core | `https://purl.org/oquo#` | [oquo](https://github.com/tecnomod-um/oquo) |
+| HURON | `https://purl.org/oquo-huron#` | [huron](https://github.com/tecnomod-um/huron) |
+| OQuaRE metrics | `https://purl.org/oquo-oquare#` | [oquare](https://github.com/tecnomod-um/oquare) |
+| OntoEnrich | `https://purl.org/oquo-ontoenrich#` | [oquo-ontoenrich](https://github.com/tecnomod-um/oquo-ontoenrich) |
+
+Generic classes, such as `oquo:RawScale` or the issue severities, come from the OQUO core.
+You can also define your own metrics, scales and issue types in an OQUO-based module. The
 [QASAR example](https://github.com/tecnomod-um/oquo/tree/main/oquo-qasar) shows how OQUO is
 used to build a quality model for ontology quality assurance.
 
