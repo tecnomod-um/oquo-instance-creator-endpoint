@@ -19,7 +19,9 @@ evaluations**. Describing evaluation results with OQUO lets you:
   for this metric?");
 - compare evaluations over time, since every result carries its timestamp;
 - link each measured value to the issues it reveals, the input that was evaluated and the
-  configuration that was used.
+  configuration that was used;
+- record the provenance of each result with [PROV-O](https://www.w3.org/TR/prov-o/): which
+  evaluation generated it and which agent (a tool, a person or an organization) ran it.
 
 The catch is that a single measurement in OQUO is spread across several linked resources
 (an observation, a measurement, a quality value, an evaluation, a time instant, and
@@ -64,6 +66,7 @@ For every observation in the request, the service creates:
 | `<ns>evaluation-<uuid>`       | `eval:Evaluation`                            | The evaluation that produced the value               |
 | `<ns>instant-<uuid>`          | `time:Instant`                               | When the evaluation happened                         |
 | `<ns>issue-<uuid>`            | your issue class                             | (Optional) problems detected by the observation      |
+| `<ns>agent-<uuid>`            | `prov:Agent`                                 | (Optional) the agent that ran the evaluation (see [Provenance](#provenance)) |
 
 `<ns>` is the **data namespace**: by default `https://purl.org/oquo-data/`, or the one you
 pass in the [`dataNamespace`](#query-parameters) parameter. The generated instances are data,
@@ -71,7 +74,9 @@ so they are kept apart from the namespaces of the OQUO vocabulary (`https://purl
 for the core, and one namespace per module, such as `https://purl.org/oquo-huron#`).
 
 IRIs are generated with random UUIDs, so **every call produces new resources**, even for the
-same input.
+same input. The only exception is the agent of a specific software version, whose IRI is
+derived from the IRI of the agent and the version, so all the evaluations run with the same
+version share it.
 
 ## Quick start
 
@@ -124,7 +129,7 @@ and skip straight to [Run](#run).
 
 The endpoint depends on the
 [oquo-instance-creator](https://github.com/tecnomod-um/oquo-instance-creator) library
-(version `0.0.6`), which is not published in Maven Central. Install it in your local Maven
+(version `0.0.7`), which is not published in Maven Central. Install it in your local Maven
 repository first:
 
 ```bash
@@ -142,15 +147,15 @@ cd oquo-instance-creator-endpoint
 mvn package
 ```
 
-This produces `target/oquo-instance-creator-endpoint-0.0.2.jar`.
+This produces `target/oquo-instance-creator-endpoint-0.0.3.jar`.
 
 #### Run
 
 ```bash
-java -jar oquo-instance-creator-endpoint-0.0.2.jar --server.port=9000
+java -jar oquo-instance-creator-endpoint-0.0.3.jar --server.port=9000
 ```
 
-Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.2.jar`
+Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.3.jar`
 if you built it yourself.
 
 The service is now listening on `http://localhost:9000`. Change `--server.port` to use a
@@ -163,7 +168,8 @@ with `http://localhost:9000/toOquoObservation`.
 
 ### `POST /toOquoObservation`
 
-- **Query parameters:** optional `dataNamespace` (see below).
+- **Query parameters:** optional `dataNamespace`, `agentIRI`, `agentTypeIRI` and
+  `agentVersion` (see below).
 - **Request body:** `application/json`, a list of observations (see below).
 - **Response:** `text/turtle`, the OQUO-compliant RDF for all the observations in the request.
   If `dataNamespace` is not valid, the service returns `400 Bad Request`.
@@ -172,11 +178,19 @@ with `http://localhost:9000/toOquoObservation`.
 
 | Parameter       | Required | Description |
 |-----------------|:--------:|-------------|
-| `dataNamespace` | no  | Namespace in which the instances (observations, measurements, quality values, evaluations, instants and issues) are created. It must be an absolute `http` or `https` IRI ending in `/` or `#`, e.g. `https://example.org/my-evaluations/`. Defaults to `https://purl.org/oquo-data/`. |
+| `dataNamespace` | no  | Namespace in which the instances (observations, measurements, quality values, evaluations, instants, issues and agent versions) are created. It must be an absolute `http` or `https` IRI ending in `/` or `#`, e.g. `https://example.org/my-evaluations/`. Defaults to `https://purl.org/oquo-data/`. |
+| `agentIRI`      | no  | IRI of the agent that ran the evaluation: a tool, a person or an organization, e.g. `https://purl.org/oquo-huron#huron-software-agent`. See [Provenance](#provenance). |
+| `agentTypeIRI`  | with `agentIRI` | Type of the agent: `http://www.w3.org/ns/prov#SoftwareAgent`, `http://www.w3.org/ns/prov#Person` or `http://www.w3.org/ns/prov#Organization`. |
+| `agentVersion`  | no  | Version of the software that ran the evaluation, e.g. `1.2.0`. Only for agents of type `prov:SoftwareAgent`. |
 
-The value must be URL-encoded (e.g. `https%3A%2F%2Fexample.org%2Fmy-evaluations%2F`). This is
-especially important if the namespace ends in `#`, which must be sent as `%23`: otherwise it
-is interpreted as a URL fragment and never reaches the server. `curl --url-query` (curl 7.87
+The agent parameters are not validated: the service uses them as they are given, so passing
+`agentTypeIRI` together with `agentIRI`, and `agentVersion` only for software agents, is up to
+the caller.
+
+Values must be URL-encoded (e.g. `https%3A%2F%2Fexample.org%2Fmy-evaluations%2F`). This is
+especially important for IRIs that contain `#`, such as a namespace ending in `#` or the IRIs
+of the agent and its type, since `#` must be sent as `%23`: otherwise it is interpreted as a
+URL fragment and never reaches the server. `curl --url-query` (curl 7.87
 or later), Python `requests` (`params=`) and Postman (*Params* tab) encode it for you.
 
 Use the default namespace for testing. To publish your evaluation results, use a namespace
@@ -231,6 +245,8 @@ name, and records which properties were considered names.
   "observationsInfoDTO": [
     {
       "sourceDocumentIRI": "http://purl.obolibrary.org/obo/go.owl",
+      "agentIRI": "https://purl.org/oquo-huron#huron-software-agent",
+      "agentTypeIRI": "http://www.w3.org/ns/prov#SoftwareAgent",
       "featureOfInterestIRI": "http://purl.obolibrary.org/obo/GO_0044208",
       "featureOfInterestTypeIRI": "http://www.w3.org/2002/07/owl#Class",
       "metricUsedIRI": "https://purl.org/oquo-huron#NamesPerClassMetric",
@@ -264,80 +280,91 @@ name, and records which properties were considered names.
 <summary>Show the full Turtle output</summary>
 
 ```turtle
-<https://purl.org/oquo-data/qualityValue-d07535b6-64a9-4394-8be2-112a1cd344c3>
-        a       <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#MeasuredValue> , <http://purl.org/net/EvaluationResult#QualityValue> ;
+<http://purl.org/net/QualityModel#HigherBest>
+        a       <http://purl.org/net/QualityModel#RankingFunction> .
+
+<https://purl.org/oquo-huron#huron-software-agent>
+        a       <http://www.w3.org/ns/prov#SoftwareAgent> .
+
+<https://purl.org/oquo-data/metric-580f6d8a-0ef4-4721-bd6d-5d45c2d65931>
+        a       <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Measurement> , <https://purl.org/oquo-huron#NamesPerClassMetric> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasValue>
+                <https://purl.org/oquo-data/qualityValue-46a282a1-df92-44fc-9a95-070069efa087> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#measurementFor>
+                <https://purl.org/oquo-data/observation-9f239a86-aa47-4eb2-ad8b-45723b02d4db> ;
+        <http://purl.org/net/QualityModel#hasScale>
+                <https://purl.org/oquo-huron#NamesPerClassMetricScale> .
+
+<https://purl.org/oquo-data/evaluation-55553c12-b4ce-49fc-9ab0-6caf59ca6a63>
+        a       <http://purl.org/net/EvaluationResult#Evaluation> , <http://www.w3.org/ns/prov#Activity> ;
+        <http://purl.org/net/EvaluationResult#evaluatedSubject>
+                <http://purl.obolibrary.org/obo/GO_0044208> ;
+        <http://purl.org/net/EvaluationResult#inputData>
+                <http://purl.obolibrary.org/obo/go.owl> , <https://purl.org/oquo-data/namesPerClassMetricConfiguration> ;
+        <http://purl.org/net/EvaluationResult#producedQualityValue>
+                <https://purl.org/oquo-data/qualityValue-46a282a1-df92-44fc-9a95-070069efa087> ;
+        <http://www.w3.org/2006/time#hasTime>
+                <https://purl.org/oquo-data/instant-5e7057c5-7f06-4118-889d-c75394cc54eb> ;
+        <http://www.w3.org/ns/prov#generated>
+                <https://purl.org/oquo-data/qualityValue-46a282a1-df92-44fc-9a95-070069efa087> ;
+        <http://www.w3.org/ns/prov#wasAssociatedWith>
+                <https://purl.org/oquo-huron#huron-software-agent> ;
+        <https://purl.org/oquo#hasDetectedIssue>
+                <https://purl.org/oquo-data/issue-7a036bd0-14b1-4987-a49b-7ee3cf003327> ;
+        <https://purl.org/oquo#hasObservation>
+                <https://purl.org/oquo-data/observation-9f239a86-aa47-4eb2-ad8b-45723b02d4db> .
+
+<https://purl.org/oquo-data/instant-5e7057c5-7f06-4118-889d-c75394cc54eb>
+        a       <http://www.w3.org/2006/time#Instant> ;
+        <http://www.w3.org/2006/time#inXSDDateTime>
+                "2023-03-18T12:47:17Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+
+<http://purl.obolibrary.org/obo/GO_0044208>
+        a       <http://purl.org/ipo/core#Asset> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Entity> , <http://www.w3.org/2002/07/owl#Class> , <http://purl.org/net/EvaluationResult#EvaluationSubject> ;
+        <http://purl.org/ipo/core#hostAssetOf>
+                <https://purl.org/oquo-data/issue-7a036bd0-14b1-4987-a49b-7ee3cf003327> .
+
+<https://purl.org/oquo-data/observation-9f239a86-aa47-4eb2-ad8b-45723b02d4db>
+        a       <http://purl.org/ipo/core#Symptom> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Observation> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasMeasurement>
+                <https://purl.org/oquo-data/metric-580f6d8a-0ef4-4721-bd6d-5d45c2d65931> ;
+        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#ofEntity>
+                <http://purl.obolibrary.org/obo/GO_0044208> ;
+        <http://purl.org/ipo/core#indicates>
+                <https://purl.org/oquo-data/issue-7a036bd0-14b1-4987-a49b-7ee3cf003327> ;
+        <http://www.w3.org/2006/time#hasTime>
+                <https://purl.org/oquo-data/instant-5e7057c5-7f06-4118-889d-c75394cc54eb> .
+
+<https://purl.org/oquo-data/qualityValue-46a282a1-df92-44fc-9a95-070069efa087>
+        a       <http://www.w3.org/ns/prov#Entity> , <http://purl.org/net/EvaluationResult#QualityValue> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#MeasuredValue> ;
         <http://www.w3.org/2000/01/rdf-schema#comment>
                 "Detail 1, Detail 2" ;
         <http://purl.org/net/EvaluationResult#forMeasure>
-                <https://purl.org/oquo-data/metric-2a37d659-28fc-4193-9642-dc6bd92d660b> ;
+                <https://purl.org/oquo-data/metric-580f6d8a-0ef4-4721-bd6d-5d45c2d65931> ;
         <http://purl.org/net/EvaluationResult#hasLiteralValue>
                 "0"^^<http://www.w3.org/2001/XMLSchema#int> ;
         <http://purl.org/net/EvaluationResult#isMeasuredOnScale>
                 <https://purl.org/oquo-huron#NamesPerClassMetricScale> ;
         <http://purl.org/net/EvaluationResult#obtainedFrom>
-                <https://purl.org/oquo-data/evaluation-7558a284-6cf1-4ac2-b838-28d886bc8a25> .
+                <https://purl.org/oquo-data/evaluation-55553c12-b4ce-49fc-9ab0-6caf59ca6a63> ;
+        <http://www.w3.org/ns/prov#wasAttributedTo>
+                <https://purl.org/oquo-huron#huron-software-agent> ;
+        <http://www.w3.org/ns/prov#wasGeneratedBy>
+                <https://purl.org/oquo-data/evaluation-55553c12-b4ce-49fc-9ab0-6caf59ca6a63> .
 
-<http://purl.org/net/QualityModel#HigherBest>
-        a       <http://purl.org/net/QualityModel#RankingFunction> .
+<https://purl.org/oquo-data/namesPerClassMetricConfiguration>
+        a       <https://purl.org/oquo#EvaluationConfigurationData> , <http://purl.org/net/EvaluationResult#EvaluationData> ;
+        <https://www.omg.org/spec/Commons/TextDatatype/hasTextValue>
+                "names = rdfs:label, foaf:name" .
 
-<https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469>
-        a       <http://purl.org/ipo/core#Symptom> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Observation> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasMeasurement>
-                <https://purl.org/oquo-data/metric-2a37d659-28fc-4193-9642-dc6bd92d660b> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#ofEntity>
-                <http://purl.obolibrary.org/obo/GO_0044208> ;
-        <http://purl.org/ipo/core#indicates>
-                <https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33> ;
-        <http://www.w3.org/2006/time#hasTime>
-                <https://purl.org/oquo-data/instant-45299b22-78a9-4d9a-bce8-171dfe9df5b4> .
-
-<https://purl.org/oquo-data/metric-2a37d659-28fc-4193-9642-dc6bd92d660b>
-        a       <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Measurement> , <https://purl.org/oquo-huron#NamesPerClassMetric> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#hasValue>
-                <https://purl.org/oquo-data/qualityValue-d07535b6-64a9-4394-8be2-112a1cd344c3> ;
-        <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#measurementFor>
-                <https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469> ;
-        <http://purl.org/net/QualityModel#hasScale>
-                <https://purl.org/oquo-huron#NamesPerClassMetricScale> .
-
-<https://purl.org/oquo-data/evaluation-7558a284-6cf1-4ac2-b838-28d886bc8a25>
-        a       <http://purl.org/net/EvaluationResult#Evaluation> ;
-        <http://purl.org/net/EvaluationResult#evaluatedSubject>
-                <http://purl.obolibrary.org/obo/GO_0044208> ;
-        <http://purl.org/net/EvaluationResult#inputData>
-                <https://purl.org/oquo-data/namesPerClassMetricConfiguration> , <http://purl.obolibrary.org/obo/go.owl> ;
-        <http://purl.org/net/EvaluationResult#producedQualityValue>
-                <https://purl.org/oquo-data/qualityValue-d07535b6-64a9-4394-8be2-112a1cd344c3> ;
-        <http://www.w3.org/2006/time#hasTime>
-                <https://purl.org/oquo-data/instant-45299b22-78a9-4d9a-bce8-171dfe9df5b4> ;
-        <https://purl.org/oquo#hasDetectedIssue>
-                <https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33> ;
-        <https://purl.org/oquo#hasObservation>
-                <https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469> .
-
-<http://purl.obolibrary.org/obo/GO_0044208>
-        a       <http://purl.org/ipo/core#Asset> , <http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#Entity> , <http://www.w3.org/2002/07/owl#Class> , <http://purl.org/net/EvaluationResult#EvaluationSubject> ;
-        <http://purl.org/ipo/core#hostAssetOf>
-                <https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33> .
-
-<https://purl.org/oquo-data/issue-e38522e0-0cb5-4d4c-9891-c44ea106cb33>
+<https://purl.org/oquo-data/issue-7a036bd0-14b1-4987-a49b-7ee3cf003327>
         a       <https://purl.org/oquo-huron#ClassWithNoNameIssue> ;
         <http://www.w3.org/2000/01/rdf-schema#comment>
                 "The class does not have any name" ;
         <http://purl.org/ipo/core#hasHostAsset>
                 <http://purl.obolibrary.org/obo/GO_0044208> ;
         <http://purl.org/ipo/core#indicatedBy>
-                <https://purl.org/oquo-data/observation-b5eed3e3-490d-4cc1-afd9-dbf4a9934469> .
-
-<https://purl.org/oquo-data/instant-45299b22-78a9-4d9a-bce8-171dfe9df5b4>
-        a       <http://www.w3.org/2006/time#Instant> ;
-        <http://www.w3.org/2006/time#inXSDDateTime>
-                "2023-03-18T12:47:17Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
-
-<https://purl.org/oquo-data/namesPerClassMetricConfiguration>
-        a       <https://purl.org/oquo#EvaluationConfigurationData> , <http://purl.org/net/EvaluationResult#EvaluationData> ;
-        <https://www.omg.org/spec/Commons/TextDatatype/hasTextValue>
-                "names = rdfs:label, foaf:name" .
+                <https://purl.org/oquo-data/observation-9f239a86-aa47-4eb2-ad8b-45723b02d4db> .
 
 <https://purl.org/oquo-huron#NamesPerClassMetricScale>
         a       <https://purl.org/oquo#RawScale> ;
@@ -355,6 +382,51 @@ name, and records which properties were considered names.
 > way in the [Quality Model Ontology](http://purl.org/net/QualityModel), which OQUO reuses.
 > It is not a typo in this service.
 
+### Provenance
+
+The provenance of the results is described with [PROV-O](https://www.w3.org/TR/prov-o/), with
+which OQUO is aligned: evaluations are `prov:Activity` and quality values are `prov:Entity`.
+Every evaluation is linked to the quality value it generated, and, if you pass `agentIRI` and
+`agentTypeIRI`, to the agent that ran it:
+
+```turtle
+<ns>evaluation-<uuid>
+        prov:generated          <ns>qualityValue-<uuid> ;
+        prov:wasAssociatedWith  <agent> .
+
+<ns>qualityValue-<uuid>
+        prov:wasGeneratedBy     <ns>evaluation-<uuid> ;
+        prov:wasAttributedTo    <agent> .
+
+<agent>  a  <agentType> .
+```
+
+`<agent>` is the IRI given in `agentIRI`, and `<agentType>` the one given in `agentTypeIRI`.
+
+The agent is usually described once, in the OQUO module of its framework (for example, the
+software agent of HURON in the HURON module), so you only need to pass its IRI. Its type is
+also stated in the output, so the results can be understood without loading that module.
+
+The version of a software agent changes from one evaluation to another, so it is not stated on
+the agent itself. If you pass `agentVersion`, the service creates an agent for that version, in
+the data namespace, which is the one associated with the evaluation and its values:
+
+```turtle
+<ns>agent-<uuid>
+        a                       prov:SoftwareAgent ;
+        schema:softwareVersion  "1.2.0" ;
+        dcterms:isVersionOf     <agent> .
+
+<agent>  a  prov:SoftwareAgent .
+```
+
+Its IRI is derived from the IRI of the agent and the version, so every evaluation run with the
+same version of the same software is linked to the same agent, and the results can be grouped
+by version.
+
+Prefixes: `prov:` is `http://www.w3.org/ns/prov#`, `schema:` is `http://schema.org/` and
+`dcterms:` is `http://purl.org/dc/terms/`.
+
 ### Calling it from Python
 
 ```python
@@ -369,11 +441,16 @@ observation = {
     "rankingFunctionIRI": "http://purl.org/net/QualityModel#HigherBest",
     "value": 0,
     "timestamp": "2023-03-18T12:47:17.000+0000",
+    "agentIRI": "https://purl.org/oquo-huron#huron-software-agent",
+    "agentTypeIRI": "http://www.w3.org/ns/prov#SoftwareAgent",
+    "agentVersion": "1.2.0"
 }
 
 response = requests.post(
     "https://semantics.inf.um.es/oquo-instance-creator/toOquoObservation",
-    params={"dataNamespace": "https://example.org/my-evaluations/"},  # optional
+    params={
+        "dataNamespace": "https://example.org/my-evaluations/",
+    },
     json={"observationsInfoDTO": [observation]},
 )
 response.raise_for_status()
