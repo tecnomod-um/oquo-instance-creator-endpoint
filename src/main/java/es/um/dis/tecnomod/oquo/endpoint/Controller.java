@@ -31,6 +31,19 @@ public class Controller {
 		return writer.toString();
 	}
 
+	@PostMapping(value="/toOquoModel", produces = "text/turtle")
+	public String toOquoModel (@RequestBody ObservationsInfoDTO observationsInfo, @RequestParam(name = "ontologyIRI", required = true) String ontologyIRI,
+			@RequestParam(name = "dataNamespace", required = false) String dataNamespace) {
+		if (dataNamespace != null && !dataNamespace.isBlank()) {
+	        validateNamespace(dataNamespace);
+	    }
+
+		Model rdfModel = InstanceCreator.createObservationsAndApplyModel(observationsInfo, ontologyIRI, dataNamespace);
+		StringWriter writer = new StringWriter();
+		rdfModel.write(writer, "TURTLE");
+		return writer.toString();
+	}
+
 	private static void validateNamespace(String ns) {
 	    try {
 	        URI uri = new URI(ns);
