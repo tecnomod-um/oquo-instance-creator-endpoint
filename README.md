@@ -21,16 +21,17 @@ evaluations**. Describing evaluation results with OQUO lets you:
 - link each measured value to the issues it reveals, the input that was evaluated and the
   configuration that was used;
 - record the provenance of each result with [PROV-O](https://www.w3.org/TR/prov-o/): which
-  evaluation generated it and which agent (a tool, a person or an organization) ran it.
+  evaluation generated it and which agent (a tool, a person or an organization) ran it;
+- convert the values of each metric to the scale of a quality model, so that the results of
+  different metrics and frameworks can be compared and aggregated.
 
 The catch is that a single measurement in OQUO is spread across several linked resources
 (an observation, a measurement, a quality value, an evaluation, a time instant, and
 optionally issues and configuration data). Writing that by hand is slow and error-prone.
 This service does it for you.
 
-A public instance is available at
-`https://semantics.inf.um.es/oquo-instance-creator/toOquoObservation`, so you can try it
-without installing anything (see [Quick start](#quick-start)).
+A public instance is available at `https://semantics.inf.um.es/oquo-instance-creator/`, so
+you can try it without installing anything (see [Quick start](#quick-start)).
 
 Typical uses:
 
@@ -52,21 +53,30 @@ directly.
  (any language)                                                                 file, SPARQL...
  ┌──────────────┐   POST JSON       ┌───────────────────────────┐   Turtle     ┌────────────┐
  │ metric value │ ────────────────▶ │  /toOquoObservation       │ ───────────▶ │ OQUO data  │
- │ per entity   │                   │  (Spring Boot + Jena)     │              │            │
- └──────────────┘                   └───────────────────────────┘              └────────────┘
+ │ per entity   │                   │  /toOquoModel             │              │            │
+ └──────────────┘                   │  (Spring Boot + Jena)     │              └────────────┘
+                                    └───────────────────────────┘
 ```
+
+The service has two methods:
+
+- **`/toOquoObservation`** returns the RDF of the observations.
+- **`/toOquoModel`** also receives the IRI of the OQUO module that describes your metrics (e.g.
+  `https://purl.org/oquo-huron`), and returns, together with the RDF of the observations, the
+  module and the ontologies it imports, and the quality values obtained by converting your
+  values with the scale conversions of the module (see [Scale conversions](#scale-conversions)).
 
 For every observation in the request, the service creates:
 
 | Resource created              | OQUO / reused class                          | What it represents                                   |
 |-------------------------------|----------------------------------------------|------------------------------------------------------|
-| `<ns>observation-<uuid>`      | `oboe:Observation`, `ipo:Symptom`            | The act of observing one entity                      |
+| `<ns>observation-<uuid>`      | `oboe:Observation` (and `ipo:Symptom` if it detected issues) | The act of observing one entity        |
 | `<ns>metric-<uuid>`           | `oboe:Measurement` + your metric class       | The measurement taken with that metric               |
-| `<ns>qualityValue-<uuid>`     | `eval:QualityValue`, `oboe:MeasuredValue`    | The value obtained, on the given scale               |
-| `<ns>evaluation-<uuid>`       | `eval:Evaluation`                            | The evaluation that produced the value               |
+| `<ns>qualityValue-<uuid>`     | `eval:QualityValue`, `oboe:MeasuredValue`, `prov:Entity` | The value obtained, on the given scale (with `/toOquoModel`, also the values converted to other scales) |
+| `<ns>evaluation-<uuid>`       | `eval:Evaluation`, `prov:Activity`           | The evaluation that produced the value               |
 | `<ns>instant-<uuid>`          | `time:Instant`                               | When the evaluation happened                         |
 | `<ns>issue-<uuid>`            | your issue class                             | (Optional) problems detected by the observation      |
-| `<ns>agent-<uuid>`            | `prov:Agent`                                 | (Optional) the agent that ran the evaluation (see [Provenance](#provenance)) |
+| `<ns>agent-<uuid>`            | the type of the agent (e.g. `prov:SoftwareAgent`) | (Optional) the specific version of the agent that ran the evaluation, when a version is given (see [Provenance](#provenance)) |
 
 `<ns>` is the **data namespace**: by default `https://purl.org/oquo-data/`, or the one you
 pass in the [`dataNamespace`](#query-parameters) parameter. The generated instances are data,
@@ -99,6 +109,16 @@ curl -X POST https://semantics.inf.um.es/oquo-instance-creator/toOquoObservation
 
 You will get back Turtle like the [example response](#example-response).
 
+To also get the OQUO module of your metrics and your values converted to the scale of its
+quality model, call `/toOquoModel` with the IRI of the module:
+
+```bash
+curl -X POST https://semantics.inf.um.es/oquo-instance-creator/toOquoModel \
+     --url-query "ontologyIRI=https://purl.org/oquo-huron" \
+     -H "Content-Type: application/json" \
+     -d @observation.json
+```
+
 To generate the instances in your own namespace instead of the default one, add the
 `dataNamespace` parameter (see [Query parameters](#query-parameters)):
 
@@ -129,7 +149,7 @@ and skip straight to [Run](#run).
 
 The endpoint depends on the
 [oquo-instance-creator](https://github.com/tecnomod-um/oquo-instance-creator) library
-(version `0.0.7`), which is not published in Maven Central. Install it in your local Maven
+(version `0.0.8`), which is not published in Maven Central. Install it in your local Maven
 repository first:
 
 ```bash
@@ -147,50 +167,55 @@ cd oquo-instance-creator-endpoint
 mvn package
 ```
 
-This produces `target/oquo-instance-creator-endpoint-0.0.3.jar`.
+This produces `target/oquo-instance-creator-endpoint-0.0.4.jar`.
 
 #### Run
 
 ```bash
-java -jar oquo-instance-creator-endpoint-0.0.3.jar --server.port=9000
+java -jar oquo-instance-creator-endpoint-0.0.4.jar --server.port=9000
 ```
 
-Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.3.jar`
+Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.4.jar`
 if you built it yourself.
 
 The service is now listening on `http://localhost:9000`. Change `--server.port` to use a
 different port.
 
-To call your own instance, use the same `curl` command as above, replacing the public URL
-with `http://localhost:9000/toOquoObservation`.
+To call your own instance, use the same `curl` commands as above, replacing
+`https://semantics.inf.um.es/oquo-instance-creator` with `http://localhost:9000`.
 
 ## API reference
 
 ### `POST /toOquoObservation`
 
-- **Query parameters:** optional `dataNamespace`, `agentIRI`, `agentTypeIRI` and
-  `agentVersion` (see below).
+- **Query parameters:** optional `dataNamespace` (see below).
 - **Request body:** `application/json`, a list of observations (see below).
 - **Response:** `text/turtle`, the OQUO-compliant RDF for all the observations in the request.
   If `dataNamespace` is not valid, the service returns `400 Bad Request`.
 
+### `POST /toOquoModel`
+
+- **Query parameters:** `ontologyIRI` and, optionally, `dataNamespace` (see below).
+- **Request body:** the same as `/toOquoObservation`.
+- **Response:** `text/turtle`, the RDF returned by `/toOquoObservation`, plus:
+  - the OQUO module given in `ontologyIRI` and all the ontologies it imports, without their
+    `owl:imports` statements, so that the result is self-contained;
+  - the quality values obtained by applying the scale conversions of the module to the values
+    of the observations (see [Scale conversions](#scale-conversions)).
+
+  If `dataNamespace` is not valid, the service returns `400 Bad Request`.
+
 #### Query parameters
 
-| Parameter       | Required | Description |
-|-----------------|:--------:|-------------|
-| `dataNamespace` | no  | Namespace in which the instances (observations, measurements, quality values, evaluations, instants, issues and agent versions) are created. It must be an absolute `http` or `https` IRI ending in `/` or `#`, e.g. `https://example.org/my-evaluations/`. Defaults to `https://purl.org/oquo-data/`. |
-| `agentIRI`      | no  | IRI of the agent that ran the evaluation: a tool, a person or an organization, e.g. `https://purl.org/oquo-huron#huron-software-agent`. See [Provenance](#provenance). |
-| `agentTypeIRI`  | with `agentIRI` | Type of the agent: `http://www.w3.org/ns/prov#SoftwareAgent`, `http://www.w3.org/ns/prov#Person` or `http://www.w3.org/ns/prov#Organization`. |
-| `agentVersion`  | no  | Version of the software that ran the evaluation, e.g. `1.2.0`. Only for agents of type `prov:SoftwareAgent`. |
-
-The agent parameters are not validated: the service uses them as they are given, so passing
-`agentTypeIRI` together with `agentIRI`, and `agentVersion` only for software agents, is up to
-the caller.
+| Parameter       | Method | Required | Description |
+|-----------------|--------|:--------:|-------------|
+| `dataNamespace` | both | no  | Namespace in which the instances (observations, measurements, quality values, evaluations, instants, issues and agent versions) are created. It must be an absolute `http` or `https` IRI ending in `/` or `#`, e.g. `https://example.org/my-evaluations/`. Defaults to `https://purl.org/oquo-data/`. |
+| `ontologyIRI`   | `/toOquoModel` | yes | IRI (or version IRI) of the OQUO module that describes the metrics, scales and issues of the observations, e.g. `https://purl.org/oquo-huron`. It can be in any RDF syntax. |
 
 Values must be URL-encoded (e.g. `https%3A%2F%2Fexample.org%2Fmy-evaluations%2F`). This is
-especially important for IRIs that contain `#`, such as a namespace ending in `#` or the IRIs
-of the agent and its type, since `#` must be sent as `%23`: otherwise it is interpreted as a
-URL fragment and never reaches the server. `curl --url-query` (curl 7.87
+especially important for IRIs that contain `#`, such as a namespace ending in `#`, since `#`
+must be sent as `%23`: otherwise it is interpreted as a URL fragment and never reaches the
+server. `curl --url-query` (curl 7.87
 or later), Python `requests` (`params=`) and Postman (*Params* tab) encode it for you.
 
 Use the default namespace for testing. To publish your evaluation results, use a namespace
@@ -211,12 +236,18 @@ observations. You can send one observation or many in the same request.
 | `scaleIRI`                 | yes | IRI of the scale the value is measured on. |
 | `scaleTypeIRI`             | yes | IRI of the type of scale, e.g. `https://purl.org/oquo#RawScale`. |
 | `rankingFunctionIRI`       | yes | Whether higher or lower values are better: `http://purl.org/net/QualityModel#HigherBest` or `http://purl.org/net/QualityModel#LowerBest`. |
-| `value`                    | yes | The measured value. Numbers, booleans and strings are stored as typed literals (e.g. `0` becomes `"0"^^xsd:int`). |
+| `value`                    | yes | The measured value. Numbers, booleans and strings are stored as typed literals (e.g. `0` becomes `"0"^^xsd:int`). On ordinal and nominal scales, give the rank, the label or the IRI of the category, so that `/toOquoModel` can convert it. |
 | `timestamp`                | yes | When the evaluation took place, e.g. `2023-03-18T12:47:17.000+0000`. |
 | `sourceDocumentIRI`        | no  | IRI of the document that was evaluated (e.g. the ontology). Stored as the evaluation's input data. |
 | `details`                  | no  | List of free-text notes, stored as `rdfs:comment` on the quality value. |
 | `issues`                   | no  | List of problems detected (see below). |
 | `configurationDataList`    | no  | List of configuration settings used in the evaluation (see below). |
+| `agentIRI`                 | no  | IRI of the agent that ran the evaluation: a tool, a person or an organization, e.g. `https://purl.org/oquo-huron#huron-software-agent`. See [Provenance](#provenance). |
+| `agentTypeIRI`             | no  | Type of the agent: `http://www.w3.org/ns/prov#SoftwareAgent`, `http://www.w3.org/ns/prov#Person` or `http://www.w3.org/ns/prov#Organization`. If not given, the agent is typed as `prov:Agent`. |
+| `agentVersion`             | no  | Version of the software that ran the evaluation, e.g. `1.2.0`. Only for software agents. |
+
+The agent fields are not validated: the service uses them as they are given, so giving
+`agentVersion` only for software agents is up to the caller.
 
 #### Issue fields
 
@@ -224,7 +255,7 @@ observations. You can send one observation or many in the same request.
 |------------------|:--------:|-------------|
 | `issueType`      | yes | IRI of the issue class, as defined in an OQUO-based module (e.g. `https://purl.org/oquo-huron#ClassWithNoNameIssue`). Generic severities defined in the OQUO core are also available: `oquo:CriticalIssue`, `oquo:MajorIssue`, `oquo:MinorIssue` and `oquo:InfoIssue`. |
 | `message`        | no  | Human-readable description, stored as `rdfs:comment`. |
-| `hostAsset`      | no  | IRI of the entity where the issue is located. |
+| `hostAsset`      | no  | IRI of the entity where the issue is located, usually the feature of interest. Give it so that the issue is linked to that entity. |
 | `causativeAsset` | no  | IRI of the entity that causes the issue, if different from the host. |
 
 #### Configuration fields
@@ -427,6 +458,47 @@ by version.
 Prefixes: `prov:` is `http://www.w3.org/ns/prov#`, `schema:` is `http://schema.org/` and
 `dcterms:` is `http://purl.org/dc/terms/`.
 
+### Scale conversions
+
+The values of a metric are given on its raw scale, which differs from metric to metric. The OQUO
+module of a framework defines scale conversions from these raw scales to the scale of its quality
+model (for example, from the raw scale of each HURON metric to the five categories of the OQuaRE
+quality model), so that the results of different metrics and frameworks can be compared.
+
+`/toOquoModel` applies these conversions: for each quality value whose scale is the input scale of
+a conversion of the module, it creates a new quality value on the output scale. With the
+[example request](#example-request), the value 0 of *names per class* is converted to the first
+category of the OQuaRE scale:
+
+```turtle
+<ns>qualityValue-<uuid2>
+        a                       eval:QualityValue , oboe:MeasuredValue , prov:Entity ;
+        eval:hasLiteralValue    1 ;
+        eval:isMeasuredOnScale  oquo-oquare-qm:OquareFiveCategoriesScale ;
+        obo:IAO_0000136         oquo-oquare-qm:OquareCategory1 ;
+        eval:forMeasure         <ns>metric-<uuid> ;
+        eval:obtainedFrom       <ns>evaluation-<uuid> ;
+        prov:wasGeneratedBy     <ns>evaluation-<uuid> ;
+        prov:wasAttributedTo    oquo-huron:huron-software-agent ;
+        prov:wasDerivedFrom     <ns>qualityValue-<uuid> .
+```
+
+- The converted value shares the measure, evaluation and agent of the original one, and is
+  linked to it with `prov:wasDerivedFrom`. The evaluation generated both (`prov:generated`), but
+  its `eval:producedQualityValue` is only the original one.
+- On ordinal and nominal scales, `eval:hasLiteralValue` is the code of the category (its rank or
+  label), and `obo:IAO_0000136` (*is about*) links the value to the category itself.
+- All the types of conversion of OQUO are supported (from cardinal, ordinal or nominal scales to
+  cardinal, ordinal or nominal scales), and conversions are chained: a converted value is
+  converted again if there is a conversion from its scale. From each original value, at most one
+  value is created on each scale.
+- Values that match no point mapping of a conversion are not converted.
+
+Prefixes: `eval:` is `http://purl.org/net/EvaluationResult#`, `oboe:` is
+`http://ecoinformatics.org/oboe/oboe.1.2/oboe-core.owl#`, `obo:` is
+`http://purl.obolibrary.org/obo/`, `oquo-oquare-qm:` is `https://purl.org/oquo-oquare-qm#` and
+`oquo-huron:` is `https://purl.org/oquo-huron#`.
+
 ### Calling it from Python
 
 ```python
@@ -459,25 +531,29 @@ with open("observations.ttl", "w") as f:
     f.write(response.text)
 ```
 
-Replace the URL with `http://localhost:9000/toOquoObservation` to use your own instance.
+Replace the URL with `http://localhost:9000/toOquoObservation` to use your own instance. To call
+`/toOquoModel`, change the method in the URL and add `"ontologyIRI": "https://purl.org/oquo-huron"`
+to `params`.
 
 The resulting file can be loaded into any RDF store or library (Apache Jena, rdflib,
 GraphDB, Virtuoso...) together with the OQUO ontology.
 
 ## Where do the metric and scale IRIs come from?
 
-The IRIs for metrics, scales and issue types are defined in the OQUO modules that integrate
-each evaluation framework, and each module uses its own namespace:
+The IRIs for metrics, scales, issue types and software agents are defined in the OQUO modules
+that integrate each evaluation framework, and each module uses its own namespace. The IRI of the
+module is the one to pass in the `ontologyIRI` parameter of `/toOquoModel`:
 
-| Module | Namespace | Repository |
-|---|---|---|
-| OQUO core | `https://purl.org/oquo#` | [oquo](https://github.com/tecnomod-um/oquo) |
-| HURON | `https://purl.org/oquo-huron#` | [huron](https://github.com/tecnomod-um/huron) |
-| OQuaRE metrics | `https://purl.org/oquo-oquare#` | [oquare](https://github.com/tecnomod-um/oquare) |
-| OntoEnrich | `https://purl.org/oquo-ontoenrich#` | [oquo-ontoenrich](https://github.com/tecnomod-um/oquo-ontoenrich) |
+| Module | IRI | Namespace | Repository |
+|---|---|---|---|
+| OQUO core | `https://purl.org/oquo-core` | `https://purl.org/oquo#` | [oquo](https://github.com/tecnomod-um/oquo) |
+| HURON | `https://purl.org/oquo-huron` | `https://purl.org/oquo-huron#` | [huron](https://github.com/tecnomod-um/huron) |
+| OQuaRE metrics | `https://purl.org/oquo-oquare` | `https://purl.org/oquo-oquare#` | [oquare](https://github.com/tecnomod-um/oquare) |
+| OntoEnrich | `https://purl.org/oquo-ontoenrich` | `https://purl.org/oquo-ontoenrich#` | [oquo-ontoenrich](https://github.com/tecnomod-um/oquo-ontoenrich) |
 
 Generic classes, such as `oquo:RawScale` or the issue severities, come from the OQUO core.
-You can also define your own metrics, scales and issue types in an OQUO-based module. The
+You can also define your own metrics, scales and issue types in an OQUO-based module (see
+[How to use OQUO](https://github.com/tecnomod-um/oquo#how-to-use-oquo)). The
 [QASAR example](https://github.com/tecnomod-um/oquo/tree/main/oquo-qasar) shows how OQUO is
 used to build a quality model for ontology quality assurance.
 
