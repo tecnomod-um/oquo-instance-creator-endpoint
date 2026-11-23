@@ -41,6 +41,8 @@ Typical uses:
   as linked data. Convert each row to the JSON below and send it to the endpoint.
 - **You are extending OQUO** with a new quality model and want example instance data to
   test it.
+- **Your tool already generates OQUO-compliant RDF**, and you want to add to it the OQUO module
+  of your metrics and the values converted to the scale of its quality model.
 
 If your application is written in Java, you can skip the REST layer and use the underlying
 library, [oquo-instance-creator](https://github.com/tecnomod-um/oquo-instance-creator),
@@ -54,17 +56,21 @@ directly.
  ┌──────────────┐   POST JSON       ┌───────────────────────────┐   Turtle     ┌────────────┐
  │ metric value │ ────────────────▶ │  /toOquoObservation       │ ───────────▶ │ OQUO data  │
  │ per entity   │                   │  /toOquoModel             │              │            │
- └──────────────┘                   │  (Spring Boot + Jena)     │              └────────────┘
+ └──────────────┘                   │  /applyModel (RDF input)  │              └────────────┘
+                                    │  (Spring Boot + Jena)     │
                                     └───────────────────────────┘
 ```
 
-The service has two methods:
+The service has three methods:
 
 - **`/toOquoObservation`** returns the RDF of the observations.
 - **`/toOquoModel`** also receives the IRI of the OQUO module that describes your metrics (e.g.
   `https://purl.org/oquo-huron`), and returns, together with the RDF of the observations, the
   module and the ontologies it imports, and the quality values obtained by converting your
   values with the scale conversions of the module (see [Scale conversions](#scale-conversions)).
+- **`/applyModel`** does the same as `/toOquoModel` on OQUO-compliant RDF that you already have,
+  such as the results of a tool that generates OQUO itself: it receives that RDF and returns it
+  with the module and the converted values.
 
 For every observation in the request, the service creates:
 
@@ -119,6 +125,18 @@ curl -X POST https://semantics.inf.um.es/oquo-instance-creator/toOquoModel \
      -d @observation.json
 ```
 
+If you already have OQUO-compliant RDF, such as `results.ttl`, call `/applyModel` with the IRI
+of the module to add the module and the converted values to it:
+
+```bash
+curl -X POST https://semantics.inf.um.es/oquo-instance-creator/applyModel \
+     --url-query "ontologyIRI=https://purl.org/oquo-huron" \
+     -H "Content-Type: text/turtle" \
+     --data-binary @results.ttl
+```
+
+Use `--data-binary`, not `-d`, so that curl sends the file as it is.
+
 To generate the instances in your own namespace instead of the default one, add the
 `dataNamespace` parameter (see [Query parameters](#query-parameters)):
 
@@ -167,15 +185,15 @@ cd oquo-instance-creator-endpoint
 mvn package
 ```
 
-This produces `target/oquo-instance-creator-endpoint-0.0.4.jar`.
+This produces `target/oquo-instance-creator-endpoint-0.0.5.jar`.
 
 #### Run
 
 ```bash
-java -jar oquo-instance-creator-endpoint-0.0.4.jar --server.port=9000
+java -jar oquo-instance-creator-endpoint-0.0.5.jar --server.port=9000
 ```
 
-Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.4.jar`
+Use the path to the `.jar` you downloaded, or `target/oquo-instance-creator-endpoint-0.0.5.jar`
 if you built it yourself.
 
 The service is now listening on `http://localhost:9000`. Change `--server.port` to use a
@@ -205,12 +223,30 @@ To call your own instance, use the same `curl` commands as above, replacing
 
   If `dataNamespace` is not valid, the service returns `400 Bad Request`.
 
+### `POST /applyModel`
+
+- **Query parameters:** `ontologyIRI` and, optionally, `dataNamespace` (see below).
+- **Request body:** OQUO-compliant RDF, such as the results of a tool that already generates
+  OQUO (e.g. HURON). The `Content-Type` header gives its syntax: `text/turtle`,
+  `application/rdf+xml` or `application/n-triples`.
+- **Response:** `text/turtle`, the RDF received plus, as in `/toOquoModel`, the OQUO module given
+  in `ontologyIRI` and all the ontologies it imports, and the quality values obtained by applying
+  the scale conversions of the module to the quality values of the RDF.
+
+  If `dataNamespace` is not valid or the RDF cannot be parsed in the syntax given, the service
+  returns `400 Bad Request`. Other syntaxes are rejected with `415 Unsupported Media Type`.
+
+Send the RDF as the raw body of the request: with curl, use `--data-binary @file.ttl` (`-d`
+removes the line breaks); in Postman, choose *Body → raw → Text* or *Body → binary*, and set the
+`Content-Type` header (with *raw → JSON*, Postman removes everything after `//` in each line,
+which breaks the IRIs).
+
 #### Query parameters
 
 | Parameter       | Method | Required | Description |
 |-----------------|--------|:--------:|-------------|
-| `dataNamespace` | both | no  | Namespace in which the instances (observations, measurements, quality values, evaluations, instants, issues and agent versions) are created. It must be an absolute `http` or `https` IRI ending in `/` or `#`, e.g. `https://example.org/my-evaluations/`. Defaults to `https://purl.org/oquo-data/`. |
-| `ontologyIRI`   | `/toOquoModel` | yes | IRI (or version IRI) of the OQUO module that describes the metrics, scales and issues of the observations, e.g. `https://purl.org/oquo-huron`. It can be in any RDF syntax. |
+| `dataNamespace` | all | no  | Namespace in which the instances (observations, measurements, quality values, evaluations, instants, issues and agent versions) are created; for `/applyModel`, the converted quality values. It must be an absolute `http` or `https` IRI ending in `/` or `#`, e.g. `https://example.org/my-evaluations/`. Defaults to `https://purl.org/oquo-data/`. |
+| `ontologyIRI`   | `/toOquoModel`, `/applyModel` | yes | IRI (or version IRI) of the OQUO module that describes the metrics, scales and issues of the observations, e.g. `https://purl.org/oquo-huron`. It can be in any RDF syntax. |
 
 Values must be URL-encoded (e.g. `https%3A%2F%2Fexample.org%2Fmy-evaluations%2F`). This is
 especially important for IRIs that contain `#`, such as a namespace ending in `#`, since `#`
@@ -465,7 +501,7 @@ module of a framework defines scale conversions from these raw scales to the sca
 model (for example, from the raw scale of each HURON metric to the five categories of the OQuaRE
 quality model), so that the results of different metrics and frameworks can be compared.
 
-`/toOquoModel` applies these conversions: for each quality value whose scale is the input scale of
+`/toOquoModel` and `/applyModel` apply these conversions: for each quality value whose scale is the input scale of
 a conversion of the module, it creates a new quality value on the output scale. With the
 [example request](#example-request), the value 0 of *names per class* is converted to the first
 category of the OQuaRE scale:
@@ -542,7 +578,7 @@ GraphDB, Virtuoso...) together with the OQUO ontology.
 
 The IRIs for metrics, scales, issue types and software agents are defined in the OQUO modules
 that integrate each evaluation framework, and each module uses its own namespace. The IRI of the
-module is the one to pass in the `ontologyIRI` parameter of `/toOquoModel`:
+module is the one to pass in the `ontologyIRI` parameter of `/toOquoModel` and `/applyModel`:
 
 | Module | IRI | Namespace | Repository |
 |---|---|---|---|
